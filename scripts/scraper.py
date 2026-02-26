@@ -1,10 +1,14 @@
 """
-Twitter/X Scraper via twscrape dengan cookies browser
+Twitter/X Scraper via Twitter API internal (GraphQL)
+Menggunakan cookies browser langsung - tanpa library twscrape
 """
 
-import asyncio
 import csv
+import json
 import os
+import time
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
@@ -13,81 +17,185 @@ MAX_TWEETS = int(os.getenv("MAX_TWEETS", "200"))
 OUTPUT_DIR = Path("data")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+AUTH_TOKEN = os.getenv("TW_AUTH_TOKEN", "")
+CT0        = os.getenv("TW_CT0", "")
+TWID       = os.getenv("TW_TWID", "")
 
-async def scrape():
-    from twscrape import API
-    from twscrape.logger import set_log_level
-    set_log_level("WARNING")
+BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
 
-    auth_token = os.getenv("TW_AUTH_TOKEN", "")
-    ct0        = os.getenv("TW_CT0", "")
-    twid       = os.getenv("TW_TWID", "").replace("u%3D", "")
 
-    if not auth_token or not ct0:
-        print("❌ TW_AUTH_TOKEN atau TW_CT0 tidak ditemukan di secrets.")
-        return
+def make_headers():
+    return {
+        "authorization":             f"Bearer {BEARER}",
+        "cookie":                    f"auth_token={AUTH_TOKEN}; ct0={CT0}; twid={TWID}",
+        "x-csrf-token":              CT0,
+        "x-twitter-active-user":     "yes",
+        "x-twitter-auth-type":       "OAuth2Session",
+        "x-twitter-client-language": "en",
+        "content-type":              "application/json",
+        "user-agent":                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "referer":                   "https://twitter.com/search",
+    }
 
-    # Format cookies sebagai string Netscape
-    cookies_str = f"auth_token={auth_token}; ct0={ct0}; twid=u%3D{twid}"
 
-    api = API()
-    await api.pool.add_account(
-        username=f"user_{twid}",
-        password="placeholder",
-        email="placeholder@placeholder.com",
-        email_password="placeholder",
-        cookies=cookies_str
-    )
+def search_tweets(query, max_results=200):
+    """Scrape tweets via Twitter internal search API."""
+    features = json.dumps({
+        "rweb_lists_timeline_redesign_enabled": True,
+        "responsive_web_graphql_exclude_directive_enabled": True,
+        "verified_phone_label_enabled": False,
+        "creator_subscriptions_tweet_preview_api_enabled": True,
+        "responsive_web_graphql_timeline_navigation_enabled": True,
+        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+        "tweetypie_unmention_optimization_enabled": True,
+        "responsive_web_edit_tweet_api_enabled": True,
+        "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+        "view_counts_everywhere_api_enabled": True,
+        "longform_notetweets_consumption_enabled": True,
+        "responsive_web_twitter_article_tweet_consumption_enabled": False,
+        "tweet_awards_web_tipping_enabled": False,
+        "freedom_of_speech_not_reach_fetch_enabled": True,
+        "standardized_nudges_misinfo": True,
+        "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+        "longform_notetweets_rich_text_read_enabled": True,
+        "longform_notetweets_inline_media_enabled": True,
+        "responsive_web_enhance_cards_enabled": False,
+    })
 
-    print(f"🔍 Query: '{QUERY}' | Max: {MAX_TWEETS} tweets")
+    variables_base = {
+        "rawQuery":    query,
+        "count":       20,
+        "querySource": "typed_query",
+        "product":     "Latest",
+    }
 
-    tweets_data = []
-    async for tweet in api.search(QUERY, limit=MAX_TWEETS):
-        row = {
-            "tweet_id":         str(tweet.id),
-            "created_at":       tweet.date.isoformat(),
-            "username":         tweet.user.username,
-            "display_name":     tweet.user.displayname,
-            "user_id":          str(tweet.user.id),
-            "followers":        tweet.user.followersCount,
-            "following":        tweet.user.friendsCount,
-            "tweet_text":       tweet.rawContent,
-            "retweet_count":    tweet.retweetCount,
-            "like_count":       tweet.likeCount,
-            "reply_count":      tweet.replyCount,
-            "quote_count":      tweet.quoteCount,
-            "lang":             tweet.lang,
-            "in_reply_to_user": tweet.inReplyToUser.username if tweet.inReplyToUser else "",
-            "retweet_from":     tweet.retweetedTweet.user.username if tweet.retweetedTweet else "",
-            "mentions":         "|".join([m.username for m in tweet.mentionedUsers]) if tweet.mentionedUsers else "",
-            "hashtags":         "|".join(tweet.hashtags) if tweet.hashtags else "",
-        }
-        tweets_data.append(row)
-        if len(tweets_data) % 50 == 0:
-            print(f"   ... {len(tweets_data)} tweets terkumpul")
+    all_tweets = []
+    cursor     = None
+    seen_ids   = set()
 
-    if not tweets_data:
-        print("❌ Tidak ada tweet ditemukan.")
-        return
+    while len(all_tweets) < max_results:
+        variables = {**variables_base}
+        if cursor:
+            variables["cursor"] = cursor
 
-    ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
-    q_safe = "putin_populisme"
+        params = urllib.parse.urlencode({
+            "variables": json.dumps(variables),
+            "features":  features,
+        })
 
-    tweets_file = OUTPUT_DIR / f"tweets_{q_safe}_{ts}.csv"
-    nodes_file  = OUTPUT_DIR / f"nodes_{q_safe}_{ts}.csv"
-    edges_file  = OUTPUT_DIR / f"edges_{q_safe}_{ts}.csv"
+        url = f"https://twitter.com/i/api/graphql/nK1dw4oV3k4w5TdtcAdSww/SearchTimeline?{params}"
 
-    save_csv(tweets_data, tweets_file, list(tweets_data[0].keys()))
-    print(f"\n✅ {len(tweets_data)} tweets → {tweets_file}")
+        try:
+            req = urllib.request.Request(url, headers=make_headers())
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            print(f"  ⚠️  Request error: {e}")
+            break
 
-    build_sna_files(tweets_data, nodes_file, edges_file)
-    print(f"✅ SNA files siap di folder data/")
+        # Parse response
+        try:
+            instructions = (
+                data["data"]["search_by_raw_query"]
+                    ["search_timeline"]["timeline"]["instructions"]
+            )
+        except (KeyError, TypeError) as e:
+            print(f"  ⚠️  Parse error: {e}")
+            print(f"  Response: {str(data)[:300]}")
+            break
 
-    from collections import Counter
-    users = Counter(t["username"] for t in tweets_data)
-    print(f"\n📊 Top 5 users:")
-    for u, c in users.most_common(5):
-        print(f"   @{u}: {c} tweets")
+        new_cursor = None
+        new_tweets = 0
+
+        for instruction in instructions:
+            if instruction.get("type") == "TimelineAddEntries":
+                for entry in instruction.get("entries", []):
+                    entry_id = entry.get("entryId", "")
+
+                    # Cursor untuk pagination
+                    if "cursor-bottom" in entry_id:
+                        try:
+                            new_cursor = entry["content"]["value"]
+                        except Exception:
+                            pass
+                        continue
+
+                    # Tweet entry
+                    try:
+                        result = (entry["content"]["itemContent"]
+                                      ["tweet_results"]["result"])
+
+                        # Handle retweet
+                        if result.get("__typename") == "TweetWithVisibilityResults":
+                            result = result["tweet"]
+
+                        tweet_id = result["rest_id"]
+                        if tweet_id in seen_ids:
+                            continue
+                        seen_ids.add(tweet_id)
+
+                        legacy = result["legacy"]
+                        user   = result["core"]["user_results"]["result"]["legacy"]
+
+                        # Reply to
+                        in_reply_to_user = legacy.get("in_reply_to_screen_name", "")
+
+                        # Retweet from
+                        retweet_from = ""
+                        if "retweeted_status_result" in legacy:
+                            try:
+                                retweet_from = (legacy["retweeted_status_result"]
+                                                ["result"]["core"]["user_results"]
+                                                ["result"]["legacy"]["screen_name"])
+                            except Exception:
+                                pass
+
+                        # Mentions
+                        mentions = "|".join([
+                            m["screen_name"]
+                            for m in legacy.get("entities", {}).get("user_mentions", [])
+                        ])
+
+                        # Hashtags
+                        hashtags = "|".join([
+                            h["text"]
+                            for h in legacy.get("entities", {}).get("hashtags", [])
+                        ])
+
+                        tweet = {
+                            "tweet_id":         tweet_id,
+                            "created_at":       legacy.get("created_at", ""),
+                            "username":         user.get("screen_name", ""),
+                            "display_name":     user.get("name", ""),
+                            "user_id":          result["core"]["user_results"]["result"]["rest_id"],
+                            "followers":        user.get("followers_count", 0),
+                            "following":        user.get("friends_count", 0),
+                            "tweet_text":       legacy.get("full_text", ""),
+                            "retweet_count":    legacy.get("retweet_count", 0),
+                            "like_count":       legacy.get("favorite_count", 0),
+                            "reply_count":      legacy.get("reply_count", 0),
+                            "quote_count":      legacy.get("quote_count", 0),
+                            "lang":             legacy.get("lang", ""),
+                            "in_reply_to_user": in_reply_to_user,
+                            "retweet_from":     retweet_from,
+                            "mentions":         mentions,
+                            "hashtags":         hashtags,
+                        }
+                        all_tweets.append(tweet)
+                        new_tweets += 1
+
+                    except Exception:
+                        continue
+
+        print(f"   +{new_tweets} tweets (total: {len(all_tweets)})")
+
+        if not new_cursor or new_tweets == 0:
+            break
+
+        cursor = new_cursor
+        time.sleep(2)
+
+    return all_tweets
 
 
 def build_sna_files(tweets, nodes_file, edges_file):
@@ -139,4 +247,29 @@ def save_csv(data, filepath, fieldnames):
 
 
 if __name__ == "__main__":
-    asyncio.run(scrape())
+    if not AUTH_TOKEN or not CT0:
+        print("❌ TW_AUTH_TOKEN atau TW_CT0 tidak ditemukan.")
+        exit(1)
+
+    print(f"🔍 Query: '{QUERY}' | Max: {MAX_TWEETS} tweets")
+    tweets = search_tweets(QUERY, MAX_TWEETS)
+
+    if not tweets:
+        print("❌ Tidak ada tweet ditemukan.")
+        exit(1)
+
+    ts          = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tweets_file = OUTPUT_DIR / f"tweets_putin_{ts}.csv"
+    nodes_file  = OUTPUT_DIR / f"nodes_putin_{ts}.csv"
+    edges_file  = OUTPUT_DIR / f"edges_putin_{ts}.csv"
+
+    save_csv(tweets, tweets_file, list(tweets[0].keys()))
+    print(f"\n✅ {len(tweets)} tweets → {tweets_file}")
+    build_sna_files(tweets, nodes_file, edges_file)
+    print(f"✅ SNA files siap di folder data/")
+
+    from collections import Counter
+    users = Counter(t["username"] for t in tweets)
+    print(f"\n📊 Top 5 users:")
+    for u, c in users.most_common(5):
+        print(f"   @{u}: {c} tweets")
