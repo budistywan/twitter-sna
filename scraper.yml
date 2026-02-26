@@ -1,0 +1,65 @@
+name: 🐦 Twitter Scraper
+
+on:
+  # Jalankan manual dari tab Actions
+  workflow_dispatch:
+    inputs:
+      search_query:
+        description: 'Query pencarian (contoh: #indonesia, @username, kata kunci)'
+        required: true
+        default: '#indonesia'
+      max_tweets:
+        description: 'Jumlah maksimum tweet'
+        required: true
+        default: '500'
+
+  # Jadwal otomatis (opsional) - setiap hari jam 08:00 WIB (01:00 UTC)
+  schedule:
+    - cron: '0 1 * * *'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # Untuk commit hasil ke repo
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: 🔍 Run scraper
+        env:
+          SEARCH_QUERY: ${{ github.event.inputs.search_query || '#indonesia' }}
+          MAX_TWEETS:   ${{ github.event.inputs.max_tweets || '500' }}
+          # Simpan ini sebagai GitHub Secrets di Settings > Secrets > Actions
+          TW_USERNAME:  ${{ secrets.TW_USERNAME }}
+          TW_PASSWORD:  ${{ secrets.TW_PASSWORD }}
+          TW_EMAIL:     ${{ secrets.TW_EMAIL }}
+        run: |
+          python scripts/scraper.py
+
+      - name: 📤 Upload hasil sebagai Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitter-data-${{ github.run_number }}
+          path: data/
+          retention-days: 30
+
+      - name: 💾 Commit data ke repository (opsional)
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/ || true
+          git diff --staged --quiet || git commit -m "📊 Data scraping: ${{ github.event.inputs.search_query || 'scheduled' }} [$(date +'%Y-%m-%d %H:%M')]"
+          git push || echo "Tidak ada perubahan untuk di-push"
