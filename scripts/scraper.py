@@ -34,7 +34,7 @@ def make_headers():
         "x-twitter-client-language": "en",
         "content-type":              "application/json",
         "user-agent":                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "referer":                   "https://twitter.com/search",
+        "referer":                   "https://x.com/search",
     }
 
 
@@ -83,7 +83,7 @@ def search_tweets(query, max_results=200):
             "features":  features,
         })
 
-        url = f"https://twitter.com/i/api/graphql/nK1dw4oV3k4w5TdtcAdSww/SearchTimeline?{params}"
+        url = f"https://x.com/i/api/graphql/gkjsKEUknALED4M5cnMQIw/SearchTimeline?{params}"
 
         try:
             req = urllib.request.Request(url, headers=make_headers())
