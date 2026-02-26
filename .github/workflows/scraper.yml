@@ -1,0 +1,189 @@
+
+bisakah menyiapkan coding from scracth untuk mengambil komen twitter (nanti nya akan dibuat SNA) . saya hanya punya github, jadi akan jalan disitu
+
+10:07 AM
+
+Check available skills
+Check available skills
+Saya akan buatkan project lengkap untuk scraping komentar Twitter/X menggunakan GitHub Actions (gratis, jalan otomatis di cloud) dan Python. Karena Twitter API berbayar, kita pakai pendekatan alternatif yang legal via snscrape atau nitter.
+
+
+Created 6 files, ran 3 commands, read a file
+Created 6 files, ran 3 commands, read a file
+Project siap! Ini struktur lengkapnya dan cara pakainya:
+
+📁 Isi Project
+twitter-sna/
+├── .github/workflows/scraper.yml   ← GitHub Actions (otomatis)
+├── scripts/scraper.py              ← Script utama scraping
+├── notebooks/SNA_Analysis.ipynb   ← Analisis & visualisasi SNA
+├── requirements.txt
+└── README.md
+🚀 Cara Setup (5 Menit)
+1. Upload semua file ini ke repo GitHub kamu (struktur folder harus sama persis)
+
+2. Tambah GitHub Secrets — pergi ke Settings → Secrets and variables → Actions:
+
+Secret	Isi
+TW_USERNAME	username Twitter (tanpa @)
+TW_PASSWORD	password Twitter
+TW_EMAIL	email Twitter
+Pakai akun Twitter biasa / gratis — tidak perlu API berbayar. Library twscrape bekerja seperti user login biasa.
+
+3. Jalankan → tab Actions → 🐦 Twitter Scraper → Run workflow → isi query (misal #pemilu2024) → klik Run
+
+4. Download hasil di bagian Artifacts setelah selesai (~2-5 menit)
+
+📊 Output untuk SNA
+Scraper otomatis menghasilkan:
+
+tweets_*.csv — semua tweet lengkap
+nodes_*.csv — daftar user + atribut (followers, tweet_count, dll)
+edges_*.csv — interaksi (reply, retweet, mention) + weight
+File nodes & edges langsung bisa diimport ke Gephi atau dianalisis dengan notebook Jupyter yang sudah disediakan (PageRank, Betweenness, Community Detection).
+
+Readme
+Document · MD 
+Scraper
+PY 
+Scraper
+YML 
+Sna analysis
+IPYNB 
+Requirements
+TXT 
+1772075757520_Screen Shot 2026-02-26 at 10.15.30.png
+betul seperti ini ya?
+
+10:16 AM
+Hampir betul, tapi ada masalah struktur folder! 🚨
+
+File kamu semua diletakkan di root repo (langsung), padahal scraper.yml harus berada di dalam folder .github/workflows/ agar GitHub Actions bisa mendeteksinya.
+
+Yang harus diperbaiki:
+Struktur yang salah (seperti screenshot kamu):
+
+twitter-sna/
+├── README.md
+├── SNA_Analysis.ipynb
+├── requirements.txt
+├── scraper.py          ← harusnya di scripts/
+└── scraper.yml         ← ⚠️ INI MASALAH UTAMA!
+Struktur yang benar:
+
+twitter-sna/
+├── .github/
+│   └── workflows/
+│       └── scraper.yml   ← WAJIB di sini!
+├── scripts/
+│   └── scraper.py
+├── notebooks/
+│   └── SNA_Analysis.ipynb
+├── requirements.txt
+└── README.md
+Cara memperbaikinya di GitHub:
+Opsi termudah — hapus semua dan upload ulang:
+
+Hapus semua file yang sudah diupload
+Buat folder dengan cara klik Add file → Create new file
+Pada nama file, ketik: .github/workflows/scraper.yml (GitHub otomatis membuat foldernya)
+Copy-paste isi scraper.yml → Commit
+Ulangi untuk scripts/scraper.py dan notebooks/SNA_Analysis.ipynb
+Upload requirements.txt dan README.md langsung di root
+Cara cepat cek apakah sudah benar: Pergi ke tab Actions — kalau muncul workflow "🐦 Twitter Scraper", berarti scraper.yml sudah terbaca dengan benar. Kalau tab Actions kosong, berarti path-nya masih salah. 👍
+
+1772076367113_Screen Shot 2026-02-26 at 10.25.38.png
+10:27 AM
+Hampir benar, tapi masih ada 1 masalah kritis! 🚨
+
+Di screenshot terlihat foldernya bernama github/workflows (tanpa titik di depan), padahal yang benar harus .github/workflows (dengan titik).
+
+Masalahnya:
+Yang kamu punya	Yang benar
+github/workflows/scraper.yml	.github/workflows/scraper.yml
+GitHub Actions hanya mengenali folder yang dimulai dengan titik: .github
+
+Cara memperbaiki:
+Buka file scraper.yml yang ada di github/workflows/
+Klik ikon pensil (Edit)
+Di bagian atas ada nama file → ubah path-nya, tambahkan titik di depan menjadi .github/workflows/scraper.yml
+Klik Commit changes
+GitHub akan otomatis membuat folder .github/workflows yang baru dan memindahkan file ke sana.
+
+Setelah itu, pergi ke tab Actions — kalau workflow "🐦 Twitter Scraper" sudah muncul, berarti sudah benar! ✅
+
+
+
+Want to be notified when Claude responds?
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Scraper · YML
+Copy
+
+name: 🐦 Twitter Scraper
+
+on:
+  # Jalankan manual dari tab Actions
+  workflow_dispatch:
+    inputs:
+      search_query:
+        description: 'Query pencarian (contoh: #indonesia, @username, kata kunci)'
+        required: true
+        default: '#indonesia'
+      max_tweets:
+        description: 'Jumlah maksimum tweet'
+        required: true
+        default: '500'
+
+  # Jadwal otomatis (opsional) - setiap hari jam 08:00 WIB (01:00 UTC)
+  schedule:
+    - cron: '0 1 * * *'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # Untuk commit hasil ke repo
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: 🔍 Run scraper
+        env:
+          SEARCH_QUERY: ${{ github.event.inputs.search_query || '#indonesia' }}
+          MAX_TWEETS:   ${{ github.event.inputs.max_tweets || '500' }}
+          # Simpan ini sebagai GitHub Secrets di Settings > Secrets > Actions
+          TW_USERNAME:  ${{ secrets.TW_USERNAME }}
+          TW_PASSWORD:  ${{ secrets.TW_PASSWORD }}
+          TW_EMAIL:     ${{ secrets.TW_EMAIL }}
+        run: |
+          python scripts/scraper.py
+
+      - name: 📤 Upload hasil sebagai Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitter-data-${{ github.run_number }}
+          path: data/
+          retention-days: 30
+
+      - name: 💾 Commit data ke repository (opsional)
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/ || true
+          git diff --staged --quiet || git commit -m "📊 Data scraping: ${{ github.event.inputs.search_query || 'scheduled' }} [$(date +'%Y-%m-%d %H:%M')]"
+          git push || echo "Tidak ada perubahan untuk di-push"
