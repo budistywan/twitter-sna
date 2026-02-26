@@ -5,7 +5,7 @@ on:
       search_query:
         description: 'Query pencarian'
         required: true
-        default: '#indonesia'
+        default: 'putin (populis OR populisme OR "pemimpin kuat" OR strongman OR "anti elit" OR anti-elit OR rakyat OR "anti barat" OR anti-barat OR "anti Barat") lang:id'
       max_tweets:
         description: 'Jumlah maksimum tweet'
         required: true
@@ -22,11 +22,14 @@ jobs:
           python-version: '3.11'
           cache: ''
       - name: Install dependencies
-        run: pip install pandas networkx
+        run: pip install pandas networkx twscrape
       - name: Run scraper
         env:
           SEARCH_QUERY: ${{ github.event.inputs.search_query }}
           MAX_TWEETS: ${{ github.event.inputs.max_tweets }}
+          TW_AUTH_TOKEN: ${{ secrets.TW_AUTH_TOKEN }}
+          TW_CT0: ${{ secrets.TW_CT0 }}
+          TW_TWID: ${{ secrets.TW_TWID }}
         run: python scripts/scraper.py
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
