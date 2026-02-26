@@ -1,6 +1,5 @@
 """
 Twitter/X Scraper via twscrape dengan cookies browser
-Tidak perlu login dari server - pakai cookies yang sudah ada
 """
 
 import asyncio
@@ -9,12 +8,10 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-QUERY      = os.getenv("SEARCH_QUERY", "#indonesia")
+QUERY      = os.getenv("SEARCH_QUERY", 'putin (populis OR populisme OR "pemimpin kuat" OR strongman OR "anti elit" OR anti-elit OR rakyat OR "anti barat" OR anti-barat OR "anti Barat") lang:id')
 MAX_TWEETS = int(os.getenv("MAX_TWEETS", "200"))
 OUTPUT_DIR = Path("data")
 OUTPUT_DIR.mkdir(exist_ok=True)
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 async def scrape():
@@ -30,19 +27,16 @@ async def scrape():
         print("❌ TW_AUTH_TOKEN atau TW_CT0 tidak ditemukan di secrets.")
         return
 
-    api = API()
+    # Format cookies sebagai string Netscape
+    cookies_str = f"auth_token={auth_token}; ct0={ct0}; twid=u%3D{twid}"
 
-    # Tambah akun via cookies langsung
-    username = f"user_{twid}"
+    api = API()
     await api.pool.add_account(
-        username=username,
+        username=f"user_{twid}",
         password="placeholder",
         email="placeholder@placeholder.com",
         email_password="placeholder",
-        cookies={
-            "auth_token": auth_token,
-            "ct0": ct0,
-        }
+        cookies=cookies_str
     )
 
     print(f"🔍 Query: '{QUERY}' | Max: {MAX_TWEETS} tweets")
@@ -77,13 +71,13 @@ async def scrape():
         return
 
     ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
-    q_safe = QUERY[:30].replace(" ", "_").replace("#", "htag_").replace('"', "")
+    q_safe = "putin_populisme"
 
     tweets_file = OUTPUT_DIR / f"tweets_{q_safe}_{ts}.csv"
     nodes_file  = OUTPUT_DIR / f"nodes_{q_safe}_{ts}.csv"
     edges_file  = OUTPUT_DIR / f"edges_{q_safe}_{ts}.csv"
 
-    save_csv(tweets_data, tweets_file, tweets_data[0].keys())
+    save_csv(tweets_data, tweets_file, list(tweets_data[0].keys()))
     print(f"\n✅ {len(tweets_data)} tweets → {tweets_file}")
 
     build_sna_files(tweets_data, nodes_file, edges_file)
@@ -145,6 +139,4 @@ def save_csv(data, filepath, fieldnames):
 
 
 if __name__ == "__main__":
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "twscrape", "-q"])
     asyncio.run(scrape())
